@@ -1,4 +1,4 @@
-# 15-441 Project 2
+git log -p master..origin/master# 15-441 Project 2
 
 ## Files
 ```
