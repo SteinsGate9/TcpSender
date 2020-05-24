@@ -15,13 +15,20 @@ void functionality(cmu_socket_t  * sock){
     n = cmu_read(sock, buf, 200, NO_FLAG);
     printf("R: %s\n", buf);
     printf("N: %d\n", n);
+
     cmu_write(sock, "hi there", 9);
-    cmu_read(sock, buf, 200, NO_FLAG);
+
+    n = cmu_read(sock, buf, 200, NO_FLAG);
+    printf("R: %s\n", buf);
+    printf("N: %d\n", n);
+
     cmu_write(sock, "hi there", 9);
 
     sleep(5);
     n = cmu_read(sock, buf, 9898, NO_FLAG);
+    printf("R: %s\n", buf);
     printf("N: %d\n", n);
+
     fp = fopen("./test/file.c", "w+");
     fwrite(buf, 1, n, fp);
 
@@ -53,7 +60,8 @@ int main(int argc, char **argv) {
         serverport = "15441";
     }
     portno = (unsigned short)atoi(serverport);
-
+    printf("%s::%d\n", serverip, portno);
+    fflush(stdout);
 
     if(cmu_socket(&socket, TCP_LISTENER, portno, serverip) < 0)
         exit(EXIT_FAILURE);

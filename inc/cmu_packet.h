@@ -14,7 +14,7 @@
 #include "global.h"
 #include "grading.h"
 
-typedef struct {
+typedef struct { /* [ip, src, dst, seq, ack, hlen, plen, flag, adv_window, ext,]25 +  ext_data  [data] */
 	uint32_t identifier;   		//4 bytes
 	uint16_t source_port;		//2 bytes
 	uint16_t destination_port;	//2 bytes
@@ -24,11 +24,12 @@ typedef struct {
 	uint16_t plen;				//2 bytes
 	uint8_t flags;				//1 byte
 	uint16_t advertised_window; //2 bytes
+
 	uint16_t extension_length;  //2 bytes
 	char* extension_data;	    //X bytes
 } cmu_header_t;
 
-typedef struct {
+typedef struct { /* header */
 	cmu_header_t header;
 	struct timeval sent_time;
 	char* data;
@@ -39,12 +40,13 @@ typedef struct {
 #define SYN_FLAG_MASK 0x8
 #define ACK_FLAG_MASK 0x4
 #define FIN_FLAG_MASK 0x2
+
 #define IDENTIFIER 15441
 #define DEFAULT_HEADER_LEN 25
 
 
 char* set_headers(uint16_t src, uint16_t dst, uint32_t seq, uint32_t ack,
-    uint16_t hlen, uint16_t plen, uint8_t flags, uint16_t adv_window, 
+    uint16_t hlen, uint16_t plen, uint8_t flags, uint16_t adv_window,
     uint16_t ext, char* ext_data);
 
 cmu_packet_t* create_packet(uint16_t src, uint16_t dst, uint32_t seq, 

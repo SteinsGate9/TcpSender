@@ -26,13 +26,13 @@ typedef struct {
 
 
 typedef struct {
-	int socket;   
+	int socket;  /* fd */
 	pthread_t thread_id;
 
-	uint16_t my_port;
-	uint16_t their_port;
+	uint16_t my_port; /* this port  */
+	uint16_t their_port; /* server port */
 
-	struct sockaddr_in conn;
+	struct sockaddr_in conn; /* send to */
 
 	char* received_buf;
 	int received_len;

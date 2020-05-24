@@ -28,14 +28,18 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   dst->socket = sockfd; /* my sockfd */
   dst->received_buf = NULL;
   dst->received_len = 0;
+
   pthread_mutex_init(&(dst->recv_lock), NULL);
   dst->sending_buf = NULL;
   dst->sending_len = 0;
   pthread_mutex_init(&(dst->send_lock), NULL);
+
   dst->type = flag;
   dst->dying = FALSE;
   pthread_mutex_init(&(dst->death_lock), NULL);
-  dst->window.last_ack_received = 0;
+
+  dst->window.last_ack_received = flag == TCP_LISTENER? 100 % INT32_MAX: 200 ;
+
   dst->window.last_seq_received = 0;
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
 
@@ -43,7 +47,6 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
     perror("ERROR condition variable not set\n");
     return EXIT_ERROR;
   }
-
 
   switch(flag){
     case(TCP_INITATOR):
@@ -56,16 +59,22 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
       conn.sin_addr.s_addr = inet_addr(serverIP);  
       conn.sin_port = htons(port); 
       dst->conn = conn; /* conn is server ip & port */
+      fprintf(stdout, "my_conn addr[%d]:port[%d]\n", conn.sin_addr.s_addr, conn.sin_port);
+      fflush(stdout);
 
       my_addr.sin_family = AF_INET;
       my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
       my_addr.sin_port = 0;                          /* their_port = 15441 */
-      if (bind(sockfd, (struct sockaddr *) &my_addr, /* my_port = 0 */
-        sizeof(my_addr)) < 0){                       /* my_conn = serverIp, 0 */ /* fd = 0, 0 */
+      fprintf(stdout, "bind addr[%d]:port[%d]\n", htonl(INADDR_ANY), 0);
+      fflush(stdout);
+      if (bind(sockfd, (struct sockaddr *) &my_addr, /* my_port = random */
+        sizeof(my_addr)) < 0){                       /* my_conn = (16777226)ip, 20796(15441) */ /* fd = /(all), /(all) */
 
         perror("ERROR on binding");
         return EXIT_ERROR;
       }
+
+
 
       break;
     
@@ -77,13 +86,17 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
 
       optval = 1;
       setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,/* their_port = 15441 */
-           (const void *)&optval , sizeof(int));  /* my_port = server_port  */
-      if (bind(sockfd, (struct sockaddr *) &conn, /* my_conn = 0, server_port */  /* fd = 0, port */
+           (const void *)&optval , sizeof(int));  /* my_port = 15441 */
+      fprintf(stdout, "bind addr[%d]:port[%d]\n", htonl(INADDR_ANY), htons((unsigned short)port));
+      fflush(stdout);
+      if (bind(sockfd, (struct sockaddr *) &conn, /* my_conn = /(all), 20796(15441) */  /* bind = /(all), 20796(15441) */
         sizeof(conn)) < 0){
           perror("ERROR on binding");
           return EXIT_ERROR;
       }
       dst->conn = conn;
+      fprintf(stdout, "my_conn addr[%d]:port[%d]\n", conn.sin_addr.s_addr, conn.sin_port);
+      fflush(stdout);
       break;
 
     default:
@@ -93,6 +106,11 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
 
   getsockname(sockfd, (struct sockaddr *) &my_addr, &len);
   dst->my_port = ntohs(my_addr.sin_port);
+  fprintf(stdout, "my_port port[%d]\n\n", dst->my_port);
+  fflush(stdout);
+
+  /* todo */
+  cmu_handshake(dst); /* listen: 0/1   client: 0/1 */
 
   pthread_create(&(dst->thread_id), NULL, begin_backend, (void *)dst);  
   return EXIT_SUCCESS;

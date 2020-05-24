@@ -18,10 +18,12 @@ void functionality(cmu_socket_t  * sock){
     cmu_write(sock, "hi there4", 10);
     cmu_write(sock, "hi there5", 10);
     cmu_write(sock, "hi there6", 10);
+
     cmu_read(sock, buf, 200, NO_FLAG);
 
     cmu_write(sock, "hi there", 9);
     cmu_read(sock, buf, 200, NO_FLAG);
+
     printf("R: %s\n", buf);
 
     read = cmu_read(sock, buf, 200, NO_WAIT);
@@ -67,7 +69,9 @@ int main(int argc, char **argv) {
 
     if(cmu_socket(&socket, TCP_INITATOR, portno, serverip) < 0)
         exit(EXIT_FAILURE);
-    
+    printf("%s::%d\n", serverip, portno);
+    fflush(stdout);
+
     functionality(&socket);
 
     if(cmu_close(&socket) < 0)

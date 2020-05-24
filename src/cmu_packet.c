@@ -81,7 +81,7 @@ char* set_headers(uint16_t src, uint16_t dst, uint32_t seq, uint32_t ack,
  *
  */
 char* packet_to_buf(cmu_packet_t* p){
-    char* msg = set_headers(p->header.source_port, p->header.destination_port, 
+    char* msg = set_headers(p->header.source_port, p->header.destination_port,
         p->header.seq_num, p->header.ack_num, p->header.hlen, p->header.plen, 
         p->header.flags, p->header.advertised_window, 
         p->header.extension_length, p->header.extension_data);
@@ -132,6 +132,7 @@ cmu_packet_t* create_packet(uint16_t src, uint16_t dst, uint32_t seq,
     new->header.flags = flags;
     new->header.advertised_window = adv_window;
     new->header.extension_length = ext;
+
     if(ext > 0){
         new->header.extension_data = malloc(ext);
         memcpy(new->header.extension_data, ext_data, ext);
@@ -170,7 +171,10 @@ cmu_packet_t* create_packet(uint16_t src, uint16_t dst, uint32_t seq,
 char* create_packet_buf(uint16_t src, uint16_t dst, uint32_t seq, uint32_t ack,
     uint16_t hlen, uint16_t plen, uint8_t flags, uint16_t adv_window, 
     uint16_t ext, char* ext_data, char* data, int len){
-
+#ifdef DEBUG_VERBOSE
+    fprintf(stdout, " data:%s\n", data);
+    fflush(stdout);
+#endif
     cmu_packet_t* temp;
     char* final;  
 
