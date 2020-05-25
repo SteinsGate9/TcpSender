@@ -39,9 +39,14 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   pthread_mutex_init(&(dst->death_lock), NULL);
 
   dst->window.last_ack_received = flag == TCP_LISTENER? 100 % INT32_MAX: 200 ;
-
   dst->window.last_seq_received = 0;
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
+#ifdef SLIDING_WINDOW
+  dst->window.LAR = 0;
+  dst->window.LFS = 0;
+  sem_init(&dst->window.sendWindowNotFull, 0, 1);
+  dst->window.NFE = 0;
+#endif
 
   if(pthread_cond_init(&dst->wait_cond, NULL) != 0){
     perror("ERROR condition variable not set\n");

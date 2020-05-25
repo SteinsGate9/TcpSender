@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <semaphore.h>
 #include "cmu_packet.h"
 #include "backend.h"
 #include "global.h"

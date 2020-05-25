@@ -1,6 +1,66 @@
 #include "backend.h"
 
 /*
+ * [0 ..confirmed... LAR-1] [LAR..sent not acked.. FAK-1] [FAK..both.. LFS-1] [LFS ..not sent.. LAR+SWS-1]*/
+void append_to_sendqueue(cmu_socket_t * sock, char* data, int buf_len) {
+  char* msg;
+  char* data_offset = data;
+  int sockfd, plen;
+  size_t conn_len = sizeof(sock->conn);
+  uint32_t seq;
+
+  sockfd = sock->socket;
+  if(buf_len > 0){
+    while(buf_len != 0){ /* if have stuff to send */
+      /* flow control */
+      seq = sock->window.LFS;
+      if (seq - sock->window.LAR >= WINDOW_SIZE ){
+        return;
+      }
+
+      /* add maximum MAX_DLEN context */
+      if(buf_len <= MAX_DLEN){ /* [  MAX_DLEN  MAX_DLEN MAX_DLEN ] buf_len */
+        plen = DEFAULT_HEADER_LEN + buf_len; /* send headerlen + buf_len */
+
+        msg = create_packet_buf(sock->my_port, sock->their_port, seq, -1,  /* create buf */
+                                DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL, data_offset, buf_len);
+
+        buf_len = 0;
+      }
+      else{
+        plen = DEFAULT_HEADER_LEN + MAX_DLEN;
+
+        msg = create_packet_buf(sock->my_port, sock->their_port, seq, -1,
+                                DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL, data_offset, MAX_DLEN);
+
+        buf_len -= MAX_DLEN;
+      }
+
+      /* save to buffer & todo: set timer */
+      sock->window.sendQ[seq%SWS].msg = (char *) malloc(plen-DEFAULT_HEADER_LEN);
+      memcpy(sock->window.sendQ[seq%SWS].msg, data_offset, plen-DEFAULT_HEADER_LEN);
+//      set_alarm();
+
+      /* try to send */
+      sendto(sockfd, msg, plen, 0, (struct sockaddr*) &(sock->conn), conn_len);
+#ifdef DEBUG_VERBOSE
+      fprintf(stdout, "senddatato: %d:%d seq:%d,ack:%d plen:%d\n", sock->conn.sin_addr.s_addr, sock->conn.sin_port, seq, -1, plen);
+        fflush(stdout);
+#endif
+
+      /* update */
+      data_offset = data_offset + plen - DEFAULT_HEADER_LEN;
+      sock->window.LFS ++;
+
+    }
+  }
+}
+
+
+
+
+
+/*
  * Param: sock - The socket to check for acknowledgements.
  * Param: seq - Sequence number to check
  *
@@ -42,15 +102,53 @@ void handle_message(cmu_socket_t * sock, char* pkt){
   uint8_t flags = get_flags(pkt);
   uint32_t data_len, seq;
   socklen_t conn_len = sizeof(sock->conn);
+  uint32_t ack;
 
-  switch(flags){
-    case ACK_FLAG_MASK: /* if this pkt is only ACK [*/
+  switch(flags){ /* [ recved ack ][LAR.(not recved ack) LFS-1][LFS ..not sent.. LAR+SWS-1] */
+    case ACK_FLAG_MASK: /* if this pkt is only ACK */
+#ifndef SLIDING_WINDOW
       if(get_ack(pkt) > sock->window.last_ack_received)
         sock->window.last_ack_received = get_ack(pkt);
+#endif
+#ifdef SLIDING_WINDOW
+      ack = get_ack(pkt);
+      sock->window.sendQ[ack%RWS].acked = 1;
+      if (ack == sock->window.LAR) {
+        uint32_t i;
+        for (i=ack; i <= RWS+ack && sock->window.sendQ[i%RWS].acked == 1; i++){
+          sock->window.sendQ[i%RWS].acked = 0;
+          free(sock->window.sendQ[i%RWS].msg);
+          /* todo:free timer  */
+        }
+        sock->window.NFE = i%RWS;
+
+        /* congestion control */
+        sock->window += MSS;
+        if (sock->window.state == SS) {
+          if (sock->window >= threshold) {
+            sock->window.state = CA;
+          }
+        }
+      }
+      else {
+        /* congestion control */
+        if (++sock->window.dup == 3){
+          sock->window.state = SS;
+          thres = sock->window.congwin / 2;
+          sock->window.congwin = thres;
+        }
+      }
+
+
+
+
+
+
+#endif
       break;
 
-
     default:
+#ifndef SLIDING_WINDOW
       /* get seq */
       seq = get_seq(pkt);
 
@@ -82,7 +180,48 @@ void handle_message(cmu_socket_t * sock, char* pkt){
         memcpy(sock->received_buf + sock->received_len, pkt + DEFAULT_HEADER_LEN, data_len);
         sock->received_len += data_len;
       }
+#endif
+#ifdef SLIDING_WINDOW
+      seq = get_seq(pkt);
+      /* flow control */
+      if (seq - sock->window.NFE >= WINDOW_SIZE){
+        return;
+      }
 
+      /* buffer */
+//      if (seq <= sock->window.NFE-1 && seq >= sock->window.NFE-WINDOW_SIZE){ /*   */
+//        ;
+//      }
+      if (seq >= sock->window.NFE && seq <= sock->window.NFE+WINDOW_SIZE-1){ /* save & send ack */
+        if (sock->window.recvQ[seq%RWS].received != 1){
+          sock->window.recvQ[seq%RWS].msg = (char*) malloc(get_plen(pkt));
+          memcpy(sock->window.recvQ[seq%RWS].msg, pkt, get_plen(pkt));
+          sock->window.recvQ[seq%RWS].received = 1;
+        }
+        if (seq == sock->window.NFE){
+          uint8_t i;
+          for (i=seq; i <= RWS+seq && sock->window.recvQ[i%RWS].received == 1; i++){
+            sock->window.recvQ[i%RWS].received = 0;
+            free(sock->window.recvQ[i%RWS].msg);
+            /* todo : put in buffer */
+          }
+          sock->window.NFE = i%RWS;
+        }
+        if (seq == sock->window.RFS)
+          sock->window.RFS++;
+      }
+      rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), -1, seq,
+                              DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, RWS-, 0, NULL, NULL, 0);
+
+      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)&(sock->conn), conn_len);
+#ifdef DEBUG_VERBOSE
+    fprintf(stdout, "sendackto: %d:%d seq:%d,ack:%d\n",sock->conn.sin_addr.s_addr, sock->conn.sin_port, -1, seq+1);
+      fflush(stdout);
+#endif
+      free(rsp);
+
+
+#endif
       break;
   }
 }
@@ -109,9 +248,8 @@ void check_for_data(cmu_socket_t * sock, int flags){
   time_out.tv_sec = 3;
   time_out.tv_usec = 0;
 
-
+  /* recv a meesage */
   while(pthread_mutex_lock(&(sock->recv_lock)) != 0);
-
   switch(flags){
     case NO_FLAG: /* recv header */
       len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_PEEK,
@@ -144,7 +282,6 @@ void check_for_data(cmu_socket_t * sock, int flags){
         n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size, NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
       buf_size = buf_size + n;
     }
-
 #ifdef DEBUG_VERBOSE
     int seq = get_seq(pkt);
     int ack = get_ack(pkt);
@@ -235,19 +372,17 @@ void* begin_backend(void * in){
   char* data;
 
   while(TRUE){
+    /* check terminal status */
     while(pthread_mutex_lock(&(dst->death_lock)) !=  0); /* wait on death_lock */
-
     death = dst->dying;
     pthread_mutex_unlock(&(dst->death_lock));
-
-
     while(pthread_mutex_lock(&(dst->send_lock)) != 0); /* wait on send lock */
     buf_len = dst->sending_len;
-
     if(death && buf_len == 0)
       break;
 
-    /* if have stuff to send, send them all */
+    /* check send buffer: append to send queue */
+#ifndef SLIDING_WINDOW
     if(buf_len > 0){
       data = malloc(buf_len);
       memcpy(data, dst->sending_buf, buf_len);
@@ -255,34 +390,61 @@ void* begin_backend(void * in){
       free(dst->sending_buf);
       dst->sending_buf = NULL;
       pthread_mutex_unlock(&(dst->send_lock));
-
       single_send(dst, data, buf_len);
       free(data);
     }
-    else
-      pthread_mutex_unlock(&(dst->send_lock));
+#endif
+#ifdef SLIDING_WINDOW
+    if(buf_len > 0){
+      data = malloc(buf_len);
+      memcpy(data, dst->sending_buf, buf_len);
+      dst->sending_len = 0;
+      free(dst->sending_buf);
+      dst->sending_buf = NULL;
+      append_to_sendqueue(dst, data, buf_len);
+      free(data);
+    }
+#endif
+    pthread_mutex_unlock(&(dst->send_lock));
 
-    /* check for data received */
-    check_for_data(dst, NO_WAIT);
+    /* handle recved message one at a time */
+    check_for_data(dst, TIMEOUT);
 
+    /* check recved buffer: check recved queue & add to buffer */
+#ifdef SLIDING_WINDOW
+
+#endif
     while(pthread_mutex_lock(&(dst->recv_lock)) != 0);
-
     if(dst->received_len > 0)
       send_signal = TRUE;
     else
       send_signal = FALSE;
-
     pthread_mutex_unlock(&(dst->recv_lock));
-
     if(send_signal){
       pthread_cond_signal(&(dst->wait_cond));
     }
-
   }
+
+  /* register every RTT signal state */
+  if (dst->window.state == SS){
+    /*todo: congwinx2*/
+  }
+  else {
+    /*todo: congwin += MSS*/
+  }
+  /* set estimate RTT & reset timer */
+
+
+
+  /* register exceed timer */
+  if (){
+    thres = congwin/2;
+    congwin = thres;
+    dst->window.state = SS;
+  }
+
 
 
   pthread_exit(NULL);
   return NULL;
 }
-
-

@@ -3,6 +3,7 @@ project(tcp)
 cmake_minimum_required(VERSION 3.4)
 
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread -g -ggdb -Wall -DDEBUG -I${INC_DIR}")
+add_definitions(-DSLIDING_WINDOW)
 
 
 ############## files
@@ -15,7 +16,9 @@ set(TEST_DIR ${TOP_DIR}/test)
 file(GLOB backend_srcs
         ${PROJECT_SOURCE_DIR}/src/backend.c
         ${PROJECT_SOURCE_DIR}/src/cmu_packet.c
-        ${PROJECT_SOURCE_DIR}/src/cmu_tcp.c)
+        ${PROJECT_SOURCE_DIR}/src/cmu_tcp.c
+        ${PROJECT_SOURCE_DIR}/src/handshake.c
+        )
 
 
 ############# executables

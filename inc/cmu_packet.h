@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <semaphore.h>
 #include <unistd.h>
 #include "global.h"
 #include "grading.h"
@@ -35,7 +36,7 @@ typedef struct { /* header */
 	char* data;
 } cmu_packet_t;
 
-	
+
 
 #define SYN_FLAG_MASK 0x8
 #define ACK_FLAG_MASK 0x4
